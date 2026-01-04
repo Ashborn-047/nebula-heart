@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { noise3D } from '../utils/noise';
 import { THEMES, RARE_THEME, CONFIG } from '../constants/themes';
 
@@ -8,6 +8,24 @@ import { THEMES, RARE_THEME, CONFIG } from '../constants/themes';
  */
 const LivingHeart = () => {
     const canvasRef = useRef(null);
+    const containerRef = useRef(null);
+    const [dimensions, setDimensions] = useState({ width: 600, height: 600 });
+
+    // Handle responsive sizing
+    useEffect(() => {
+        const updateDimensions = () => {
+            const vw = window.innerWidth;
+            const vh = window.innerHeight;
+            // Use smaller dimension to ensure heart fits, with padding
+            const maxSize = Math.min(vw * 0.9, vh * 0.75, 600);
+            const size = Math.max(280, maxSize); // Minimum 280px for very small screens
+            setDimensions({ width: size, height: size });
+        };
+
+        updateDimensions();
+        window.addEventListener('resize', updateDimensions);
+        return () => window.removeEventListener('resize', updateDimensions);
+    }, []);
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -15,10 +33,16 @@ const LivingHeart = () => {
         const ctx = canvas.getContext('2d');
         let animationFrameId;
 
+        // Set canvas resolution (2x for retina displays)
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        const canvasSize = dimensions.width;
+        canvas.width = canvasSize * dpr;
+        canvas.height = canvasSize * dpr;
+        ctx.scale(dpr, dpr);
+
         // Get configuration values
         const {
             POINTS,
-            BASE_RADIUS,
             NOISE_SCALE,
             NOISE_AMP,
             TISSUE_LAYERS,
@@ -29,8 +53,13 @@ const LivingHeart = () => {
             RARE_THEME_CHANCE
         } = CONFIG;
 
-        const CENTER_X = canvas.width / 2;
-        const CENTER_Y = canvas.height / 2;
+        // Scale radius based on canvas size (responsive)
+        const scaleFactor = canvasSize / 600; // 600 is our reference size
+        const BASE_RADIUS = CONFIG.BASE_RADIUS * scaleFactor;
+        const SCALED_NOISE_AMP = NOISE_AMP * scaleFactor;
+
+        const CENTER_X = canvasSize / 2;
+        const CENTER_Y = canvasSize / 2;
 
         // Shockwave State
         let shockwaves = [];
@@ -183,7 +212,7 @@ const LivingHeart = () => {
             if (beatIntensity < 0.8) isShockwaveActive = false;
 
             // 5. CLEAR
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.clearRect(0, 0, canvasSize, canvasSize);
 
             // 6. DRAW SHOCKWAVES
             shockwaves = shockwaves.filter(wave => wave.opacity > 0);
@@ -213,7 +242,7 @@ const LivingHeart = () => {
                         const alpha = wave.opacity * (1 - (hierarchyPos * 0.8));
 
                         ctx.beginPath();
-                        drawCachedOrganicPath(ctx, finalScale, POINTS, BASE_RADIUS, CENTER_X, CENTER_Y, NOISE_AMP * distortionMultiplier, noiseCache, wave.rotationOffset);
+                        drawCachedOrganicPath(ctx, finalScale, POINTS, BASE_RADIUS, CENTER_X, CENTER_Y, SCALED_NOISE_AMP * distortionMultiplier, noiseCache, wave.rotationOffset);
 
                         ctx.lineWidth = 1.5 + (i * 0.8);
                         ctx.strokeStyle = `hsla(${wHue}, ${wSat}%, ${lightness}%, ${alpha * 0.5})`;
@@ -234,7 +263,7 @@ const LivingHeart = () => {
             // Layer A: Deep Diffusion
             ctx.save();
             ctx.beginPath();
-            drawCachedOrganicPath(ctx, expansion, POINTS, BASE_RADIUS, CENTER_X, CENTER_Y, NOISE_AMP, noiseCache, 0);
+            drawCachedOrganicPath(ctx, expansion, POINTS, BASE_RADIUS, CENTER_X, CENTER_Y, SCALED_NOISE_AMP, noiseCache, 0);
             ctx.fillStyle = 'rgba(15, 23, 42, 0.8)';
             ctx.shadowColor = `hsla(${currentHue}, ${currentSat}%, 60%, 0.6)`;
             ctx.shadowBlur = 60;
@@ -244,7 +273,7 @@ const LivingHeart = () => {
             // Layer B: Main Body
             ctx.save();
             ctx.beginPath();
-            drawCachedOrganicPath(ctx, expansion * 0.95, POINTS, BASE_RADIUS, CENTER_X, CENTER_Y, NOISE_AMP, noiseCache, 0);
+            drawCachedOrganicPath(ctx, expansion * 0.95, POINTS, BASE_RADIUS, CENTER_X, CENTER_Y, SCALED_NOISE_AMP, noiseCache, 0);
 
             const baseGrad = ctx.createRadialGradient(CENTER_X, CENTER_Y, 0, CENTER_X, CENTER_Y, BASE_RADIUS * 1.3);
             baseGrad.addColorStop(0, `hsla(${currentHue}, ${currentSat - 20}%, 90%, 1)`);
@@ -267,7 +296,7 @@ const LivingHeart = () => {
                 const layerHue = i % 2 === 0 ? currentHue : currentHue + 20;
                 const layerColor = `hsla(${layerHue}, ${currentSat}%, 70%, 1)`;
 
-                drawOrganicPath(ctx, layerTime, expansion * layerScale, POINTS, BASE_RADIUS, CENTER_X, CENTER_Y, NOISE_SCALE * 2.5, NOISE_AMP * 1.2, layerNoiseOffset);
+                drawOrganicPath(ctx, layerTime, expansion * layerScale, POINTS, BASE_RADIUS, CENTER_X, CENTER_Y, NOISE_SCALE * 2.5, SCALED_NOISE_AMP * 1.2, layerNoiseOffset);
 
                 ctx.fillStyle = layerColor;
                 ctx.globalAlpha = 0.08;
@@ -285,32 +314,37 @@ const LivingHeart = () => {
             ctx.restore();
 
             // Layer E: Highlights
-            drawSoftHighlights(ctx, elapsed, expansion, POINTS, BASE_RADIUS, CENTER_X, CENTER_Y, NOISE_SCALE, NOISE_AMP, currentHue);
+            drawSoftHighlights(ctx, elapsed, expansion, POINTS, BASE_RADIUS, CENTER_X, CENTER_Y, NOISE_SCALE, SCALED_NOISE_AMP, currentHue);
 
             animationFrameId = requestAnimationFrame(render);
         };
 
         render();
         return () => cancelAnimationFrame(animationFrameId);
-    }, []);
+    }, [dimensions]);
 
     return (
-        <div className="flex flex-col items-center justify-center min-h-screen bg-neutral-950 overflow-hidden relative selection:bg-purple-500/30">
+        <div
+            ref={containerRef}
+            className="flex flex-col items-center justify-center min-h-screen bg-neutral-950 overflow-hidden relative selection:bg-purple-500/30 px-4"
+        >
             {/* UI Overlay */}
-            <div className="absolute top-8 text-center z-10 space-y-2 pointer-events-none select-none">
-                <h1 className="text-4xl font-bold text-white tracking-widest opacity-90 uppercase drop-shadow-[0_0_15px_rgba(216,180,254,0.5)]">
+            <div className="absolute top-4 sm:top-8 text-center z-10 space-y-1 sm:space-y-2 pointer-events-none select-none px-4">
+                <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white tracking-widest opacity-90 uppercase drop-shadow-[0_0_15px_rgba(216,180,254,0.5)]">
                     Organic Nebula
                 </h1>
-                <p className="text-purple-300/60 text-sm tracking-wide font-mono">
+                <p className="text-purple-300/60 text-xs sm:text-sm tracking-wide font-mono">
                     Dynamic Chroma Core
                 </p>
             </div>
 
             <canvas
                 ref={canvasRef}
-                width={800}
-                height={800}
-                className="w-[600px] h-[600px] max-w-full max-h-full"
+                style={{
+                    width: dimensions.width,
+                    height: dimensions.height
+                }}
+                className="max-w-full"
             />
 
             {/* Background decoration */}
